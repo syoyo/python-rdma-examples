@@ -67,7 +67,7 @@ class Endpoint(object):
 
         completions = 0
         posts = depth
-        for wc in self.poller.iterwc(timeout=1):
+        for wc in self.poller.iterwc(timeout=3):
             if wc.status != ibv.IBV_WC_SUCCESS:
                 raise ibv.WCError(wc,self.cq,obj=self.qp);
             completions += 1
@@ -78,7 +78,7 @@ class Endpoint(object):
             if completions == n:
                 break;
         else:
-            raise rdma.RDMError("CQ timed out");
+            raise rdma.RDMAError("CQ timed out");
 
         tcomp = clock_monotonic()
 
@@ -145,7 +145,13 @@ def server_mode(outfilename, dev):
             peerinfo = pickle.loads(buf)
             print "sz = ", peerinfo.size
 
-            with Endpoint(-1, peerinfo.size, dev) as end:
+            f = open(outfilename, "w+")
+            f.seek(peerinfo.size - 1);
+            f.write("\0")
+            f.flush()
+            f.seek(0)
+
+            with Endpoint(f.fileno(), peerinfo.size, dev) as end:
                 with rdma.get_gmp_mad(end.ctx.end_port,verbs=end.ctx) as umad:
                     end.path = peerinfo.path;
                     end.path.end_port = end.ctx.end_port;
@@ -170,10 +176,9 @@ def server_mode(outfilename, dev):
                 s.recv(1024);
 
                 print "--xfer end"
-                f = open(outfilename, "wb")
-                data = end.mem.read(peerinfo.size)
-
-                f.write(data)
+                #f = open(outfilename, "wb")
+                #data = end.mem.read(peerinfo.size)
+                #f.write(data)
                 f.close()
 
 def main():
