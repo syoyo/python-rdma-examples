@@ -3,6 +3,7 @@ import pickle
 import socket
 import contextlib
 import os, sys
+import time
 from mmap import mmap
 from collections import namedtuple
 import rdma.ibverbs as ibv;
@@ -118,8 +119,10 @@ def client_mode(hostname,infilename,dev):
             # Synchronize the transition to RTS
             sock.send("Ready");
             sock.recv(1024);
+            startTime = time.time();
             end.rdma()
-            print "-- rmda end"
+            endTime = time.time();
+            print "-- rmda end: elapsed time = %f " % (endTime - startTime)
 
             sock.shutdown(socket.SHUT_WR);
             sock.recv(1024);
@@ -141,16 +144,25 @@ def server_mode(outfilename, dev):
         print "Listening port..."
         s,addr = sock.accept()
         with contextlib.closing(s):
+            totalStartTime = time.time();
+
+            peerInfoStartTime = time.time();
             buf = s.recv(1024)
             peerinfo = pickle.loads(buf)
+            peerInfoEndTime = time.time();
             print "sz = ", peerinfo.size
+            print "--peerinfo: elapsed = %f secs" % (peerInfoEndTime - peerInfoStartTime)
 
+            fseekStartTime = time.time();
             f = open(outfilename, "w+")
             f.seek(peerinfo.size - 1);
             f.write("\0")
             f.flush()
             f.seek(0)
+            fseekEndTime = time.time();
+            print "--fseek  : elapsed = %f secs" % (fseekEndTime - fseekStartTime)
 
+            endPointStartTime = time.time();
             with Endpoint(f.fileno(), peerinfo.size, dev) as end:
                 with rdma.get_gmp_mad(end.ctx.end_port,verbs=end.ctx) as umad:
                     end.path = peerinfo.path;
@@ -168,6 +180,11 @@ def server_mode(outfilename, dev):
                     end.path,peerinfo.addr,peerinfo.rkey);
 
                 end.connect(peerinfo)
+                endPointEndTime = time.time();
+                print "--endpoint: elapsed = %f secs" % (endPointEndTime - endPointStartTime)
+
+                startTime = time.time();
+
                 # Synchronize the transition to RTS
                 s.send("ready");
                 s.recv(1024);
@@ -175,7 +192,10 @@ def server_mode(outfilename, dev):
                 s.shutdown(socket.SHUT_WR);
                 s.recv(1024);
 
-                print "--xfer end"
+                endTime = time.time();
+
+                print "--xfer end: elapsed = %f secs" % (endTime - startTime)
+                print "--total   : elapsed = %f secs" % (endTime - totalStartTime)
                 #f = open(outfilename, "wb")
                 #data = end.mem.read(peerinfo.size)
                 #f.write(data)
